@@ -1,168 +1,152 @@
-# GeoData QA Inspector 🔎
+# GeoData QA Inspector - Modular Version
 
-A comprehensive Streamlit-based application for Quality Assurance of geospatial data. This tool allows users to upload, inspect, visualize, and compare geospatial datasets with powerful analysis capabilities.
+A modular Streamlit application for Quality Assurance of geospatial data. This version has been refactored from the original monolithic `app.py` into a well-organized, maintainable package structure.
 
-## 🚀 Features
+## 🏗️ Architecture
 
-### Data Loading & Support
-- **Multiple Formats**: Supports GeoPackage (.gpkg) and GeoParquet (.parquet) files
-- **Robust Parsing**: Handles various geometry encodings (WKB, WKT) with fallback mechanisms
-- **Error Handling**: Graceful handling of corrupted or invalid geospatial data
+The application has been refactored into a modular structure with clear separation of concerns:
 
-### Quality Assurance Tools
-- **Data Profiling**: Comprehensive statistics on dataset structure and content
-- **Missing Value Analysis**: Identify and quantify missing data across all columns
-- **Geometry Validation**: Detect invalid or empty geometries
-- **Memory Usage**: Track dataset memory consumption
-- **CRS Information**: Display coordinate reference system details
+```
+src/
+├── __init__.py                 # Package initialization
+├── main.py                     # Main application orchestrator
+├── core/                       # Core business logic
+│   ├── __init__.py
+│   ├── data_loader.py         # File loading and parsing
+│   ├── qa_calculator.py       # Quality assurance calculations
+│   └── database.py            # Database connections
+├── ui/                         # User interface components
+│   ├── __init__.py
+│   ├── sidebar.py             # Sidebar and file uploads
+│   └── tabs/                  # Tab-specific UI components
+│       ├── __init__.py
+│       ├── home.py            # Welcome and instructions
+│       ├── summary.py         # QA statistics and overview
+│       ├── explorer.py        # Table and map visualization
+│       ├── charts.py          # Data visualization charts
+│       ├── sql.py             # SQL query interface
+│       └── comparison.py      # Dataset comparison
+└── utils/                      # Utilities and constants
+    ├── __init__.py
+    ├── constants.py           # Configuration constants
+    └── types.py              # Type hints and aliases
+```
 
-### Visualization & Exploration
-- **Interactive Maps**: Visualize geospatial data using PyDeck
-- **Data Tables**: Browse and inspect tabular data with sorting and filtering
-- **Chart Builder**: Create custom visualizations for attribute data
-- **SQL Query Interface**: Execute custom SQL queries on your data using DuckDB
+## 🚀 Quick Start
 
-### Comparison Tools
-- **Side-by-Side Analysis**: Compare two datasets simultaneously
-- **Statistical Comparison**: Identify differences in data distributions
-- **Spatial Overlay**: Visualize spatial relationships between datasets
+### Option 1: Run the modular version directly
 
-## 📋 Requirements
+```bash
+streamlit run app_modular.py
+```
 
-- Python 3.8+
-- Streamlit
-- GeoPandas
-- PyArrow
-- DuckDB
-- PyDeck
-- Altair
+### Option 2: Install as a package
 
-## 🛠️ Installation
+```bash
+pip install -e .
+streamlit run app_modular.py
+```
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd quick-qa
-   ```
+## 📦 Module Overview
 
-2. **Create a virtual environment** (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+### Core Modules (`src/core/`)
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+- **`data_loader.py`**: Handles file uploads and parsing of GeoPackage and GeoParquet files
+- **`qa_calculator.py`**: Calculates quality assurance statistics (missing values, geometry health, etc.)
+- **`database.py`**: Manages DuckDB connections for SQL queries
 
-## 🚀 Usage
+### UI Modules (`src/ui/`)
 
-1. **Start the application**:
-   ```bash
-   streamlit run app.py
-   ```
+- **`sidebar.py`**: File upload interface and session state management
+- **`tabs/`**: Individual tab components for different app functionalities
 
-2. **Open your browser** and navigate to the provided URL (typically `http://localhost:8501`)
+### Utility Modules (`src/utils/`)
 
-3. **Upload your geospatial data**:
-   - Use the sidebar to upload GeoPackage (.gpkg) or GeoParquet (.parquet) files
-   - The application will automatically load and analyze your data
+- **`constants.py`**: Centralized configuration values and constants
+- **`types.py`**: Type hints and aliases for better code documentation
 
-4. **Explore your data**:
-   - **Home**: Overview and quick statistics
-   - **Summary**: Detailed QA metrics and data profiling
-   - **Table & Map Explorer**: Interactive data browsing and mapping
-   - **Chart Builder**: Create custom visualizations
-   - **SQL Query**: Execute custom queries on your data
-   - **Comparison**: Compare two datasets side-by-side
+## 🔧 Key Improvements
 
-## 📊 Application Tabs
+### 1. **Separation of Concerns**
+- Business logic separated from UI components
+- Clear module responsibilities
+- Easier to test individual components
 
-### Home Tab
-- Quick overview of loaded datasets
-- Basic statistics and data summary
-- Navigation to other analysis tools
+### 2. **Maintainability**
+- Smaller, focused files
+- Clear imports and dependencies
+- Consistent code structure
 
-### Summary Tab
-- Comprehensive data profiling
-- Missing value analysis
-- Geometry statistics and validation
-- Memory usage and performance metrics
+### 3. **Extensibility**
+- Easy to add new tabs or features
+- Modular design allows for independent development
+- Clear interfaces between components
 
-### Table & Map Explorer Tab
-- Interactive data table with sorting and filtering
-- Interactive map visualization using PyDeck
-- Attribute-based styling and symbology
+### 4. **Type Safety**
+- Comprehensive type hints
+- Better IDE support and error detection
+- Self-documenting code
 
-### Chart Builder Tab
-- Create custom charts for attribute data
-- Multiple chart types supported
-- Interactive filtering and selection
+## 🧪 Testing
 
-### SQL Query Tab
-- Execute custom SQL queries using DuckDB
-- Query results visualization
-- Export capabilities
+The modular structure makes it easier to test individual components:
 
-### Comparison Tab
-- Side-by-side dataset comparison
-- Statistical analysis of differences
-- Spatial overlay visualization
+```python
+# Example: Test data loading
+from src.core.data_loader import load_data
 
-## 🔧 Technical Details
+# Example: Test QA calculations
+from src.core.qa_calculator import calculate_qa_stats
+```
 
-### Architecture
-- **Frontend**: Streamlit web application
-- **Data Processing**: GeoPandas for geospatial operations
-- **Database**: DuckDB for SQL queries
-- **Visualization**: PyDeck for maps, Altair for charts
-- **Caching**: Streamlit caching for performance optimization
+## 🔄 Migration from Original
 
-### Supported File Formats
-- **GeoPackage (.gpkg)**: Native GeoPandas support
-- **GeoParquet (.parquet)**: Optimized columnar format with geometry support
+The original `app.py` has been preserved. To use the modular version:
 
-### Geometry Handling
-- Automatic detection of geometry columns
-- Support for WKB and WKT geometry encodings
-- Validation of geometry integrity
-- CRS (Coordinate Reference System) management
+1. **Keep using the original**: `streamlit run app.py`
+2. **Switch to modular**: `streamlit run app_modular.py`
 
-## 🐛 Troubleshooting
+Both versions provide identical functionality, but the modular version is more maintainable and extensible.
 
-### Common Issues
+## 📋 Dependencies
 
-1. **File Loading Errors**:
-   - Ensure your file is in a supported format (.gpkg or .parquet)
-   - Check that the file contains valid geometry data
-   - Verify file permissions
+The modular version uses the same dependencies as the original:
 
-2. **Memory Issues**:
-   - Large datasets may require more memory
-   - Consider using GeoParquet format for better compression
-   - Close other applications to free up memory
+- `streamlit` - Web application framework
+- `geopandas` - Geospatial data handling
+- `pandas` - Data manipulation
+- `pydeck` - Map visualization
+- `duckdb` - SQL database
+- `altair` - Chart creation (optional)
+- `shapely` - Geometry processing
 
-3. **Geometry Parsing Errors**:
-   - The application includes multiple fallback mechanisms for geometry parsing
-   - If parsing fails, the geometry column will be dropped and a warning displayed
+## 🛠️ Development
+
+### Adding New Features
+
+1. **New Tab**: Create a new file in `src/ui/tabs/`
+2. **New Core Functionality**: Add to `src/core/`
+3. **New Constants**: Add to `src/utils/constants.py`
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Use type hints throughout
+- Add docstrings to all functions
+- Keep modules focused and single-purpose
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-## 📝 License
+## 📞 Support
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 👨‍💻 Author
-
-**Dany Laksono** - July 3, 2025
-
----
-
-**Note**: This application is designed for geospatial data quality assurance and analysis. It provides comprehensive tools for exploring, validating, and comparing geospatial datasets in an intuitive web interface.
+For issues and questions, please open an issue on GitHub. 
