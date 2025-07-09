@@ -125,7 +125,7 @@ def render_table_and_map_explorer_tab(gdf: GeoDataFrame) -> None:
                 ) / 2, (filtered_gdf_4326.total_bounds[0] + filtered_gdf_4326.total_bounds[2]) / 2
                 
                 view_state = pdk.ViewState(
-                    latitude=midpoint[0], longitude=midpoint[1], zoom=10, pitch=45
+                    latitude=midpoint[0], longitude=midpoint[1], zoom=10, pitch=0, bearing=0
                 )
 
                 layer = pdk.Layer(

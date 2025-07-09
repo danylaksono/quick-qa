@@ -67,4 +67,32 @@ def render_chart_builder_tab(gdf: GeoDataFrame) -> None:
             )
             .properties(title=f"Distribution of {col_to_plot}")
         )
-        st.altair_chart(chart, use_container_width=True) 
+        st.altair_chart(chart, use_container_width=True)
+
+    # Data Exploration Panel using pygwalker (StreamlitRenderer)
+    with st.expander("🔍 Data Exploration (Pygwalker)", expanded=False):
+        st.markdown("Explore your data interactively with [Pygwalker](https://github.com/Kanaries/pygwalker). You can save your chart state in the UI.")
+        try:
+            from pygwalker.api.streamlit import StreamlitRenderer, init_streamlit_comm
+        except ImportError:
+            st.error("Pygwalker is not installed. Please run `pip install pygwalker`.")
+            return
+        # Initialize pygwalker communication
+        init_streamlit_comm()
+        # Convert GeoDataFrame to DataFrame if needed for pygwalker
+        df = gdf.copy()
+        if hasattr(df, "geometry"):
+            df["geometry_wkt"] = df["geometry"].apply(lambda g: g.wkt if g is not None else None)
+            df = df.drop(columns=["geometry"])  # Remove geometry column to avoid duckdb error
+        @st.cache_resource
+        def get_pyg_renderer(_df):
+            return StreamlitRenderer(_df, spec="./gw_config.json", debug=False)
+        renderer = get_pyg_renderer(df)
+        st.subheader("Display Explore UI")
+        tab1, tab2 = st.tabs([
+            "graphic walker", "data profiling"
+        ])
+        with tab1:
+            renderer.explorer()
+        with tab2:
+            renderer.explorer(default_tab="data", key="pyg_explorer_1")
