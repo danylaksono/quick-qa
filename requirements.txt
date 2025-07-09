@@ -1,0 +1,6 @@
+streamlit
+geopandas
+pyarrow
+duckdb
+pydeck
+altair
