@@ -243,7 +243,7 @@ def render_sidebar() -> None:
             st.session_state.gdf2 = load_data(uploaded_file_2, uploaded_file_2.name)
             st.session_state.gdf2_name = uploaded_file_2.name
         
-        st.info("Geodata QA Inspector. All data is processed locally in your browser.")
+        st.info("Geodata QA Inspector - v.1.0.0 2025")
 
 
 def render_home_tab() -> None:
@@ -253,7 +253,6 @@ def render_home_tab() -> None:
     st.markdown(
         """
         This application is designed for quick and efficient Quality Assurance (QA) of your geospatial data.
-        It runs entirely in your browser, ensuring your data remains private and secure.
 
         ### How to Use This App:
 
@@ -319,6 +318,83 @@ def render_summary_tab(gdf: GeoDataFrame, title: str) -> None:
             st.write("**Bounding Box:**")
             if qa_stats.get("bbox") is not None:
                 st.code(f"{qa_stats['bbox']}")
+                
+                # Add map visualization of the bounding box
+                st.write("**Bounding Box Map:**")
+                try:
+                    # Create a simple bounding box visualization
+                    from shapely.geometry import box
+                    
+                    # Get the bounding box coordinates
+                    bbox = qa_stats['bbox']
+                    # bbox format: [minx, miny, maxx, maxy]
+                    bbox_geom = box(bbox[0], bbox[1], bbox[2], bbox[3])
+                    
+                    # Create a GeoDataFrame with the bounding box
+                    bbox_gdf = gpd.GeoDataFrame(
+                        {'geometry': [bbox_geom]}, 
+                        crs=gdf.crs
+                    )
+                    
+                    # Reproject to WGS84 for web mapping
+                    bbox_gdf_4326 = bbox_gdf.to_crs("EPSG:4326")
+                    
+                    # Calculate center point for the map view
+                    center_lat = (bbox_gdf_4326.total_bounds[1] + bbox_gdf_4326.total_bounds[3]) / 2
+                    center_lon = (bbox_gdf_4326.total_bounds[0] + bbox_gdf_4326.total_bounds[2]) / 2
+                    
+                    # Basemap selector for context
+                    basemap_style = st.selectbox(
+                        "Basemap Style",
+                        options=["light", "dark", "satellite", "road"],
+                        index=0,
+                        key="bbox_basemap"
+                    )
+                    
+                    # Create view state
+                    view_state = pdk.ViewState(
+                        latitude=center_lat,
+                        longitude=center_lon,
+                        zoom=8,
+                        pitch=0
+                    )
+                    
+                    # Create the bounding box layer
+                    bbox_layer = pdk.Layer(
+                        "GeoJsonLayer",
+                        bbox_gdf_4326,
+                        opacity=0.3,
+                        stroked=True,
+                        filled=True,
+                        get_fill_color=[255, 0, 0, 100],  # Red with transparency
+                        get_line_color=[255, 0, 0, 255],   # Solid red border
+                        get_line_width=3,
+                        pickable=True,
+                    )
+                    
+                    # Create tooltip with safe CRS handling
+                    crs_string = gdf.crs.to_string() if gdf.crs else "Not defined"
+                    tooltip = {
+                        "html": "<b>Bounding Box</b><br/>"
+                                f"<b>CRS:</b> {crs_string}<br/>"
+                                f"<b>Bounds:</b> {bbox}<br/>"
+                                f"<b>Width:</b> {bbox[2] - bbox[0]:.6f}<br/>"
+                                f"<b>Height:</b> {bbox[3] - bbox[1]:.6f}"
+                    }
+                    
+                    # Render the map with selected basemap
+                    st.pydeck_chart(
+                        pdk.Deck(
+                            map_style=f"mapbox://styles/mapbox/{basemap_style}-v9",
+                            initial_view_state=view_state,
+                            layers=[bbox_layer],
+                            tooltip=tooltip,
+                        )
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Could not create bounding box map: {e}")
+                    st.info("Map visualization requires valid geometries and CRS.")
             else:
                 st.info("No bounding box could be determined.")
         else:
