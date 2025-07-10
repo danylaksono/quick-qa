@@ -18,12 +18,26 @@ from .ui import (
 from .utils.constants import PAGE_CONFIG, SESSION_KEYS
 
 
+def cleanup_on_startup() -> None:
+    """Performs cleanup tasks on app startup."""
+    # Clear any stale cache data
+    try:
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        logging.info("Cache cleared on startup")
+    except Exception as e:
+        logging.warning(f"Could not clear cache on startup: {e}")
+
+
 def main() -> None:
     """Main function to run the Streamlit app."""
     # Setup basic logging
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
+    
+    # Perform startup cleanup
+    cleanup_on_startup()
     
     # Initialize session state
     initialize_session_state()

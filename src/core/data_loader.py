@@ -21,6 +21,16 @@ except ImportError:
 from src.utils.types import GeoDataFrame, FileUpload
 
 
+def clear_data_cache() -> None:
+    """Clears all cached data to free up memory."""
+    try:
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        logging.info("Data cache cleared successfully")
+    except Exception as e:
+        logging.error(f"Error clearing cache: {e}")
+
+
 @st.cache_data(show_spinner="Loading data...")
 def load_data(uploaded_file: FileUpload, file_name: str) -> Optional[GeoDataFrame]:
     """
@@ -52,6 +62,7 @@ def load_data(uploaded_file: FileUpload, file_name: str) -> Optional[GeoDataFram
                         break
             if not geom_cols:
                 st.error(f"File '{file_name}' does not contain a geometry column.")
+                st.toast(f"❌ Failed to load {file_name}: No geometry column found", icon="❌")
                 return None
             geom_col = geom_cols[0]
             geom_series = df[geom_col]
@@ -104,6 +115,7 @@ def load_data(uploaded_file: FileUpload, file_name: str) -> Optional[GeoDataFram
                 "Unsupported file format. Please upload a GeoPackage (.gpkg) "
                 "or GeoParquet (.parquet) file."
             )
+            st.toast(f"❌ Failed to load {file_name}: Unsupported format", icon="❌")
             return None
             
         # Ensure a geometry column exists and has the correct name
@@ -115,10 +127,13 @@ def load_data(uploaded_file: FileUpload, file_name: str) -> Optional[GeoDataFram
         else:
             if gdf.geometry.name != "geometry":
                 gdf = gdf.rename_geometry("geometry")
-                
+        
+        # Show success toast
+        st.toast(f"✅ Successfully loaded {file_name} ({len(gdf)} rows)", icon="✅")
         return gdf
         
     except Exception as e:
         st.error(f"Error loading file '{file_name}': {e}")
+        st.toast(f"❌ Failed to load {file_name}: {str(e)[:50]}...", icon="❌")
         logging.error(f"Failed to load {file_name}: {e}")
         return None 
