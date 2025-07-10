@@ -291,3 +291,85 @@ def render_comparison_tab(
                     tooltip=['dataset'] + cols_selected
                 ).properties(title=f"Scatter Plot: {cols_selected[0]} vs {cols_selected[1]}")
                 st.altair_chart(scat_chart, use_container_width=True)
+
+    # --- Change Detection Panel ---
+    with st.expander("Change Detection", expanded=False):
+        st.subheader("Detect Changes Between Datasets")
+        # Try to auto-detect reference columns (ID columns)
+        def find_id_candidates(df):
+            candidates = []
+            for col in df.columns:
+                if str(col).lower() in ["id", "idx", "index"]:
+                    candidates.append(col)
+            # Add columns with all unique values
+            unique_cols = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
+            for col in unique_cols:
+                if col not in candidates:
+                    candidates.append(col)
+            return candidates
+
+        id_candidates1 = find_id_candidates(gdf1)
+        id_candidates2 = find_id_candidates(gdf2)
+        common_id_candidates = list(set(id_candidates1) & set(id_candidates2))
+        # If no common candidates, try all columns with unique values in both
+        if not common_id_candidates:
+            unique1 = [col for col in gdf1.columns if gdf1[col].is_unique and gdf1[col].notnull().all()]
+            unique2 = [col for col in gdf2.columns if gdf2[col].is_unique and gdf2[col].notnull().all()]
+            common_id_candidates = list(set(unique1) & set(unique2))
+
+        if not common_id_candidates:
+            st.warning("No suitable reference (ID) column found in both datasets. Change detection requires a common unique column.")
+        else:
+            ref_col = st.selectbox(
+                "Select reference column for change detection:",
+                options=common_id_candidates,
+                key="change_ref_col"
+            )
+            # Check for nulls or non-uniqueness
+            if gdf1[ref_col].isnull().any() or gdf2[ref_col].isnull().any():
+                st.error(f"Reference column '{ref_col}' contains null values in one of the datasets. Please clean your data.")
+            elif not gdf1[ref_col].is_unique or not gdf2[ref_col].is_unique:
+                st.error(f"Reference column '{ref_col}' is not unique in one of the datasets. Please ensure uniqueness.")
+            else:
+                # Join on reference column
+                try:
+                    # Only compare columns present in both
+                    compare_cols = [c for c in gdf1.columns if c in gdf2.columns and c != ref_col]
+                    merged = pd.merge(
+                        gdf1[[ref_col] + compare_cols],
+                        gdf2[[ref_col] + compare_cols],
+                        on=ref_col,
+                        how="inner",
+                        suffixes=(f"_{name1}", f"_{name2}")
+                    )
+                    changes = []
+                    for col in compare_cols:
+                        col1 = f"{col}_{name1}"
+                        col2 = f"{col}_{name2}"
+                        # Compare values, handle NaN properly
+                        diff_mask = ~(merged[col1].eq(merged[col2]) | (merged[col1].isna() & merged[col2].isna()))
+                        changed_rows = merged.loc[diff_mask, [ref_col, col1, col2]]
+                        for _, row in changed_rows.iterrows():
+                            changes.append({
+                                ref_col: row[ref_col],
+                                "Column": col,
+                                f"{name1}": row[col1],
+                                f"{name2}": row[col2]
+                            })
+                    # Also detect added/removed IDs
+                    ids1 = set(gdf1[ref_col])
+                    ids2 = set(gdf2[ref_col])
+                    added_ids = sorted(list(ids2 - ids1))
+                    removed_ids = sorted(list(ids1 - ids2))
+                    if changes:
+                        st.write(f"Detected {len(changes)} changed value(s):")
+                        changes_df = pd.DataFrame(changes)
+                        st.dataframe(changes_df, use_container_width=True)
+                    else:
+                        st.success("No changed values detected for common features.")
+                    if added_ids:
+                        st.warning(f"IDs only in `{name2}` (added): {added_ids[:10]}{' ...' if len(added_ids)>10 else ''}")
+                    if removed_ids:
+                        st.warning(f"IDs only in `{name1}` (removed): {removed_ids[:10]}{' ...' if len(removed_ids)>10 else ''}")
+                except Exception as e:
+                    st.error(f"Error during change detection: {e}")
