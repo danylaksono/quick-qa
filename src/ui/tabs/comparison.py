@@ -5,6 +5,9 @@ Dataset comparison tab UI components.
 import streamlit as st
 import pandas as pd
 
+import folium
+from streamlit_folium import st_folium
+
 from src.core.qa_calculator import calculate_qa_stats
 from src.utils.types import GeoDataFrame
 def render_comparison_tab(
@@ -368,6 +371,95 @@ def render_comparison_tab(
                     st.error(f"Error during change detection: {e}")
 
     # --- Map Comparison Panel ---
+    
+    # --- Helper functions ---
+
+    def get_common_values(gdf1, gdf2, col):
+        return sorted(set(gdf1[col].dropna()) & set(gdf2[col].dropna()))
+
+    def get_map_center(gdf):
+        try:
+            return list(gdf.geometry.centroid.unary_union.centroid.coords)[0][::-1]
+        except Exception:
+            return [51.5, -0.12]  # fallback: central London
+
+    def add_geojson_layer(gdf, name, color):
+        gj = folium.GeoJson(
+            gdf.__geo_interface__,
+            name=name,
+            style_function=lambda _: {"color": color, "weight": 2, "fillOpacity": 0.4},
+            tooltip=folium.GeoJsonTooltip(fields=gdf.columns.drop("geometry").tolist()[:5]),
+            popup=folium.GeoJsonPopup(
+                fields=gdf.columns.drop("geometry").tolist()[:8],
+                max_width=300
+            )
+        )
+        return gj
+
+    def render_map(gdf, name, color, map_id, center, zoom):
+        m = folium.Map(location=center, zoom_start=zoom, control_scale=True, tiles="CartoDB positron")
+        layer = add_geojson_layer(gdf, name, color)
+        layer.add_to(m)
+        folium.LayerControl().add_to(m)
+        return st_folium(m, height=500, width="100%", key=map_id)
+
+    # --- UI layout ---
+    with st.expander("Map Comparison", expanded=True):
+        st.subheader("🗺️ Side-by-Side Linked Maps with Multiple Filters")
+
+        # --- Choose columns to filter by ---
+        shared_cols = sorted(set(gdf1.columns) & set(gdf2.columns) - {"geometry"})
+        selected_filters = st.multiselect("Select filter columns:", shared_cols, default=shared_cols[:2])
+
+        # --- Build filter UI dynamically ---
+        filter_vals = {}
+        for col in selected_filters:
+            common_vals = get_common_values(gdf1, gdf2, col)
+            if not common_vals:
+                st.warning(f"No common values found in column: {col}")
+                st.stop()
+            default_val = common_vals[0]  # sensible default: first shared value
+            val = st.selectbox(f"{col}", common_vals, index=0, key=f"filter_{col}")
+            filter_vals[col] = val
+
+        # --- Filter datasets ---
+        filtered1 = gdf1.copy()
+        filtered2 = gdf2.copy()
+        for col, val in filter_vals.items():
+            filtered1 = filtered1[filtered1[col] == val]
+            filtered2 = filtered2[filtered2[col] == val]
+
+        # --- Shared map center ---
+        center = get_map_center(filtered1 if not filtered1.empty else filtered2)
+        if 'map_center' not in st.session_state:
+            st.session_state['map_center'] = center
+        if 'map_zoom' not in st.session_state:
+            st.session_state['map_zoom'] = 14
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown(f"**{name1}**")
+            if not filtered1.empty:
+                map_data1 = render_map(filtered1, name1, "#3186cc", "map1", st.session_state['map_center'], st.session_state['map_zoom'])
+                if map_data1 and 'center' in map_data1:
+                    st.session_state['map_center'] = [map_data1['center']['lat'], map_data1['center']['lng']]
+                    st.session_state['map_zoom'] = map_data1['zoom']
+            else:
+                st.info("No features to display in map 1.")
+
+        with col2:
+            st.markdown(f"**{name2}**")
+            if not filtered2.empty:
+                map_data2 = render_map(filtered2, name2, "#f45c42", "map2", st.session_state['map_center'], st.session_state['map_zoom'])
+                if map_data2 and 'center' in map_data2:
+                    st.session_state['map_center'] = [map_data2['center']['lat'], map_data2['center']['lng']]
+                    st.session_state['map_zoom'] = map_data2['zoom']
+            else:
+                st.info("No features to display in map 2.")
+
+        st.caption("Pan or zoom either map to update the view. You can compare filtered subsets interactively.")
+
     # with st.expander("Map Comparison", expanded=False):
     #     st.subheader("Side-by-Side Map Comparison with Attribute Filtering")
     #     import folium
