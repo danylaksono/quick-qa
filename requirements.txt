@@ -6,3 +6,5 @@ pydeck
 altair
 pygwalker
 hvplot
+folium
+streamlit_folium

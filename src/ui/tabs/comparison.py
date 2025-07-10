@@ -292,16 +292,15 @@ def render_comparison_tab(
                 ).properties(title=f"Scatter Plot: {cols_selected[0]} vs {cols_selected[1]}")
                 st.altair_chart(scat_chart, use_container_width=True)
 
+
     # --- Change Detection Panel ---
     with st.expander("Change Detection", expanded=False):
         st.subheader("Detect Changes Between Datasets")
-        # Try to auto-detect reference columns (ID columns)
         def find_id_candidates(df):
             candidates = []
             for col in df.columns:
                 if str(col).lower() in ["id", "idx", "index"]:
                     candidates.append(col)
-            # Add columns with all unique values
             unique_cols = [col for col in df.columns if df[col].is_unique and df[col].notnull().all()]
             for col in unique_cols:
                 if col not in candidates:
@@ -311,7 +310,6 @@ def render_comparison_tab(
         id_candidates1 = find_id_candidates(gdf1)
         id_candidates2 = find_id_candidates(gdf2)
         common_id_candidates = list(set(id_candidates1) & set(id_candidates2))
-        # If no common candidates, try all columns with unique values in both
         if not common_id_candidates:
             unique1 = [col for col in gdf1.columns if gdf1[col].is_unique and gdf1[col].notnull().all()]
             unique2 = [col for col in gdf2.columns if gdf2[col].is_unique and gdf2[col].notnull().all()]
@@ -325,15 +323,12 @@ def render_comparison_tab(
                 options=common_id_candidates,
                 key="change_ref_col"
             )
-            # Check for nulls or non-uniqueness
             if gdf1[ref_col].isnull().any() or gdf2[ref_col].isnull().any():
                 st.error(f"Reference column '{ref_col}' contains null values in one of the datasets. Please clean your data.")
             elif not gdf1[ref_col].is_unique or not gdf2[ref_col].is_unique:
                 st.error(f"Reference column '{ref_col}' is not unique in one of the datasets. Please ensure uniqueness.")
             else:
-                # Join on reference column
                 try:
-                    # Only compare columns present in both
                     compare_cols = [c for c in gdf1.columns if c in gdf2.columns and c != ref_col]
                     merged = pd.merge(
                         gdf1[[ref_col] + compare_cols],
@@ -346,7 +341,6 @@ def render_comparison_tab(
                     for col in compare_cols:
                         col1 = f"{col}_{name1}"
                         col2 = f"{col}_{name2}"
-                        # Compare values, handle NaN properly
                         diff_mask = ~(merged[col1].eq(merged[col2]) | (merged[col1].isna() & merged[col2].isna()))
                         changed_rows = merged.loc[diff_mask, [ref_col, col1, col2]]
                         for _, row in changed_rows.iterrows():
@@ -356,7 +350,6 @@ def render_comparison_tab(
                                 f"{name1}": row[col1],
                                 f"{name2}": row[col2]
                             })
-                    # Also detect added/removed IDs
                     ids1 = set(gdf1[ref_col])
                     ids2 = set(gdf2[ref_col])
                     added_ids = sorted(list(ids2 - ids1))
@@ -373,3 +366,86 @@ def render_comparison_tab(
                         st.warning(f"IDs only in `{name1}` (removed): {removed_ids[:10]}{' ...' if len(removed_ids)>10 else ''}")
                 except Exception as e:
                     st.error(f"Error during change detection: {e}")
+
+    # --- Map Comparison Panel ---
+    # with st.expander("Map Comparison", expanded=False):
+    #     st.subheader("Side-by-Side Map Comparison with Attribute Filtering")
+    #     import folium
+    #     from streamlit_folium import st_folium
+    #     try:
+    #         from ipywidgets import jslink, VBox
+    #         from folium import Map
+    #     except ImportError:
+    #         st.warning("ipywidgets is not installed. Map linking will be disabled. Run `pip install ipywidgets` for best experience.")
+    #         jslink = None
+
+    #     st.markdown("**Filter features by attribute** (e.g., `ID = 1234`)")
+    #     filter_col = st.selectbox("Select attribute to filter by:", options=sorted(list(set(gdf1.columns) & set(gdf2.columns))), key="map_filter_col")
+    #     unique_vals1 = sorted(gdf1[filter_col].dropna().unique())
+    #     unique_vals2 = sorted(gdf2[filter_col].dropna().unique())
+    #     common_vals = sorted(list(set(unique_vals1) & set(unique_vals2)))
+    #     if not common_vals:
+    #         st.warning(f"No common values for '{filter_col}' in both datasets.")
+    #     else:
+    #         selected_val = st.selectbox(f"Select value for '{filter_col}':", options=common_vals, key="map_filter_val")
+    #         filtered1 = gdf1[gdf1[filter_col] == selected_val]
+    #         filtered2 = gdf2[gdf2[filter_col] == selected_val]
+    #         col1, col2 = st.columns(2)
+    #         def get_center(gdf):
+    #             if gdf.empty:
+    #                 return [0, 0]
+    #             try:
+    #                 centroid = gdf.geometry.centroid.unary_union.centroid
+    #                 return [centroid.y, centroid.x]
+    #             except Exception:
+    #                 return [0, 0]
+
+    #         # --- Map sync state ---
+    #         if 'map_center' not in st.session_state:
+    #             st.session_state['map_center'] = get_center(filtered1 if not filtered1.empty else filtered2)
+    #         if 'map_zoom' not in st.session_state:
+    #             st.session_state['map_zoom'] = 14
+
+    #         def update_map_state(map_data):
+    #             if map_data and 'center' in map_data and 'zoom' in map_data:
+    #                 center = map_data['center']
+    #                 # st_folium returns {'lat': ..., 'lng': ...}, folium expects [lat, lng]
+    #                 if isinstance(center, dict) and 'lat' in center and 'lng' in center:
+    #                     st.session_state['map_center'] = [center['lat'], center['lng']]
+    #                 else:
+    #                     st.session_state['map_center'] = center
+    #                 st.session_state['map_zoom'] = map_data['zoom']
+
+    #         def get_map_center():
+    #             center = st.session_state['map_center']
+    #             if isinstance(center, dict) and 'lat' in center and 'lng' in center:
+    #                 return [center['lat'], center['lng']]
+    #             return center
+
+    #         with col1:
+    #             st.markdown(f"**{name1}**")
+    #             if not filtered1.empty:
+    #                 m1 = folium.Map(location=get_map_center(), zoom_start=st.session_state['map_zoom'])
+    #                 folium.GeoJson(
+    #                     filtered1.__geo_interface__,
+    #                     tooltip=folium.GeoJsonTooltip(fields=[filter_col], aliases=[filter_col]),
+    #                     popup=folium.GeoJsonPopup(fields=[c for c in filtered1.columns if c != 'geometry'], aliases=[c for c in filtered1.columns if c != 'geometry'], max_width=300)
+    #                 ).add_to(m1)
+    #                 map_data1 = st_folium(m1, width=400, height=400, key="map1")
+    #                 update_map_state(map_data1)
+    #             else:
+    #                 st.info("No features to show.")
+    #         with col2:
+    #             st.markdown(f"**{name2}**")
+    #             if not filtered2.empty:
+    #                 m2 = folium.Map(location=get_map_center(), zoom_start=st.session_state['map_zoom'])
+    #                 folium.GeoJson(
+    #                     filtered2.__geo_interface__,
+    #                     tooltip=folium.GeoJsonTooltip(fields=[filter_col], aliases=[filter_col]),
+    #                     popup=folium.GeoJsonPopup(fields=[c for c in filtered2.columns if c != 'geometry'], aliases=[c for c in filtered2.columns if c != 'geometry'], max_width=300)
+    #                 ).add_to(m2)
+    #                 map_data2 = st_folium(m2, width=400, height=400, key="map2")
+    #                 update_map_state(map_data2)
+    #             else:
+    #                 st.info("No features to show.")
+    #         st.caption("Map view is synchronized between the two maps. Pan or zoom either map to update both.")
