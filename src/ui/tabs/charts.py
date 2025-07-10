@@ -5,6 +5,7 @@ Chart builder tab UI components for data visualization.
 import streamlit as st
 import pandas as pd
 
+from src.core.data_loader import prepare_dataframe_for_display
 from src.utils.types import GeoDataFrame
 from src.utils.constants import CHART_TYPES, HISTOGRAM_BINS_RANGE
 
@@ -21,8 +22,11 @@ def render_chart_builder_tab(gdf: GeoDataFrame) -> None:
         st.error("Altair is not installed. Please run `pip install altair`.")
         return
 
-    numeric_cols = gdf.select_dtypes(include=["number"]).columns.tolist()
-    categorical_cols = gdf.select_dtypes(
+    # Create a display-safe DataFrame for Altair charts
+    chart_df = prepare_dataframe_for_display(gdf)
+
+    numeric_cols = chart_df.select_dtypes(include=["number"]).columns.tolist()
+    categorical_cols = chart_df.select_dtypes(
         include=["object", "category", "bool"]
     ).columns.tolist()
 
@@ -39,7 +43,7 @@ def render_chart_builder_tab(gdf: GeoDataFrame) -> None:
         col_to_plot = st.selectbox("Select a numeric column:", options=numeric_cols)
         bins = st.slider("Number of bins", *HISTOGRAM_BINS_RANGE)
         chart = (
-            alt.Chart(gdf)
+            alt.Chart(chart_df)
             .mark_bar()
             .encode(
                 x=alt.X(f"{col_to_plot}:Q", bin=alt.Bin(maxbins=bins)),
@@ -58,7 +62,7 @@ def render_chart_builder_tab(gdf: GeoDataFrame) -> None:
             "Select a categorical column:", options=categorical_cols
         )
         chart = (
-            alt.Chart(gdf)
+            alt.Chart(chart_df)
             .mark_bar()
             .encode(
                 x=alt.X(f"{col_to_plot}:N", sort="-y"),
@@ -77,22 +81,60 @@ def render_chart_builder_tab(gdf: GeoDataFrame) -> None:
         except ImportError:
             st.error("Pygwalker is not installed. Please run `pip install pygwalker`.")
             return
+        
         # Initialize pygwalker communication
         init_streamlit_comm()
+        
         # Convert GeoDataFrame to DataFrame if needed for pygwalker
-        df = gdf.copy()
-        if hasattr(df, "geometry"):
-            df["geometry_wkt"] = df["geometry"].apply(lambda g: g.wkt if g is not None else None)
-            df = df.drop(columns=["geometry"])  # Remove geometry column to avoid duckdb error
+        # Use a more robust conversion that ensures no geometry objects remain
+        try:
+            df = prepare_dataframe_for_display(gdf)
+            
+            # Additional safety check: ensure no geometry objects remain
+            if 'geometry' in df.columns:
+                # Convert geometry column to string representation
+                df = df.copy()
+                df['geometry'] = df['geometry'].astype(str)
+            
+            # Check for any remaining geometry-like objects in any column
+            for col in df.columns:
+                if df[col].dtype == 'object':
+                    # Sample a few values to check for geometry objects
+                    sample_values = df[col].dropna().head(3)
+                    if any(hasattr(val, 'wkt') for val in sample_values if val is not None):
+                        # Convert to string representation
+                        df[col] = df[col].astype(str)
+            
+            # Ensure it's a pure pandas DataFrame
+            df = pd.DataFrame(df)
+            
+        except Exception as e:
+            st.error(f"Error preparing data for PyGWalker: {e}")
+            st.info("Trying fallback conversion...")
+            try:
+                # Fallback: drop geometry column entirely
+                if hasattr(gdf, 'geometry') and 'geometry' in gdf.columns:
+                    df = gdf.drop(columns=['geometry'])
+                else:
+                    df = pd.DataFrame(gdf)
+            except Exception as fallback_error:
+                st.error(f"Fallback conversion also failed: {fallback_error}")
+                return
+        
         @st.cache_resource
         def get_pyg_renderer(_df):
             return StreamlitRenderer(_df, spec="./gw_config.json", debug=False)
-        renderer = get_pyg_renderer(df)
-        st.subheader("Display Explore UI")
-        tab1, tab2 = st.tabs([
-            "graphic walker", "data profiling"
-        ])
-        with tab1:
-            renderer.explorer()
-        with tab2:
-            renderer.explorer(default_tab="data", key="pyg_explorer_1")
+        
+        try:
+            renderer = get_pyg_renderer(df)
+            st.subheader("Display Explore UI")
+            tab1, tab2 = st.tabs([
+                "graphic walker", "data profiling"
+            ])
+            with tab1:
+                renderer.explorer()
+            with tab2:
+                renderer.explorer(default_tab="data", key="pyg_explorer_1")
+        except Exception as e:
+            st.error(f"PyGWalker initialization failed: {e}")
+            st.info("This might be due to unsupported data types. Try uploading a different file or check the data format.")

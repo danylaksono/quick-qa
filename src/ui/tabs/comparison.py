@@ -9,6 +9,7 @@ import folium
 from streamlit_folium import st_folium
 
 from src.core.qa_calculator import calculate_qa_stats
+from src.core.data_loader import ensure_display_safe_dataframe
 from src.utils.types import GeoDataFrame
 def render_comparison_tab(
     gdf1: GeoDataFrame, gdf2: GeoDataFrame, name1: str, name2: str

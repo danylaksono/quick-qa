@@ -6,9 +6,24 @@ import streamlit as st
 import pydeck as pdk
 import pandas as pd
 
+from src.core.data_loader import prepare_dataframe_for_display, ensure_display_safe_dataframe
 from src.utils.types import GeoDataFrame
 from src.utils.constants import BASE_COLORS, DEFAULT_COLOR, DEFAULT_OPACITY, DEFAULT_LINE_WIDTH
 
+
+def _safe_for_duckdb(df):
+    """Convert geometry column to WKT if present and possible, or drop if not convertible. Handles edge cases and errors gracefully."""
+    import pandas as pd
+    df = df.copy()
+    if 'geometry' in df.columns:
+        try:
+            # Try to convert to WKT if possible
+            df['geometry'] = df['geometry'].apply(lambda x: x.wkt if hasattr(x, 'wkt') else (str(x) if x is not None else None))
+        except Exception as e:
+            # If conversion fails, drop the geometry column
+            st.warning(f"Could not convert 'geometry' column to WKT for export/analysis: {e}. Dropping 'geometry' column.")
+            df = df.drop(columns=['geometry'])
+    return df
 
 def render_table_and_map_explorer_tab(gdf: GeoDataFrame) -> None:
     """Renders the combined table and map explorer tab."""
@@ -16,20 +31,25 @@ def render_table_and_map_explorer_tab(gdf: GeoDataFrame) -> None:
     st.info("Inspect the raw attribute data and see it visualized on the map. Filter the table to see the corresponding features highlighted on the map.")
 
     # Check if we have valid geometries for mapping
-    has_valid_geometries = "geometry" in gdf.columns and not gdf.geometry.is_empty.all()
-    
+    has_valid_geometries = False
+    try:
+        has_valid_geometries = "geometry" in gdf.columns and not gdf.geometry.is_empty.all()
+    except Exception as e:
+        st.warning(f"Could not check geometry validity: {e}")
+        has_valid_geometries = False
+
     if not has_valid_geometries:
         st.warning("No valid geometries to display on the map. Only table functionality will be available.")
 
     # Column selector
     all_cols = gdf.columns.tolist()
     default_cols = [col for col in all_cols if col != 'geometry']
-    
+
     with st.expander("Filter and Select Columns", expanded=True):
         selected_cols = st.multiselect(
             "Select columns to display:", options=all_cols, default=default_cols
         )
-        
+
         if not selected_cols:
             st.warning("Please select at least one column to display.")
             return
@@ -53,18 +73,15 @@ def render_table_and_map_explorer_tab(gdf: GeoDataFrame) -> None:
 
     # Create two columns for table and map
     col1, col2 = st.columns([1, 1])
-    
+
     with col1:
         st.subheader("📊 Data Table")
-        display_df = filtered_gdf[selected_cols].copy()
-        # Always convert geometry to WKT string for display, if DataFrame
-        if isinstance(display_df, pd.DataFrame) and 'geometry' in display_df.columns:
-            display_df['geometry'] = display_df['geometry'].apply(lambda x: x.wkt if hasattr(x, 'wkt') else str(x))
+        display_df = prepare_dataframe_for_display(filtered_gdf[selected_cols])
         st.dataframe(display_df, use_container_width=True)
-        if isinstance(filtered_gdf, pd.DataFrame):
-            export_df = filtered_gdf[selected_cols].copy()
-            if isinstance(export_df, pd.DataFrame) and 'geometry' in export_df.columns:
-                export_df['geometry'] = export_df['geometry'].apply(lambda x: x.wkt if hasattr(x, 'wkt') else str(x))
+
+        # For export and DuckDB/pygwalker compatibility, use safe conversion
+        export_df = _safe_for_duckdb(filtered_gdf[selected_cols])
+        try:
             st.download_button(
                 "Download Data as CSV",
                 export_df.to_csv(index=False),
@@ -72,6 +89,8 @@ def render_table_and_map_explorer_tab(gdf: GeoDataFrame) -> None:
                 "text/csv",
                 key="download-csv",
             )
+        except Exception as e:
+            st.error(f"Could not prepare CSV for download: {e}")
 
     with col2:
         if has_valid_geometries:

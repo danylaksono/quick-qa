@@ -7,17 +7,70 @@ import pydeck as pdk
 import geopandas as gpd
 
 from src.core.qa_calculator import calculate_qa_stats
+from src.core.data_loader import prepare_dataframe_for_display
 from src.utils.types import GeoDataFrame
 
 
 def render_summary_tab(gdf: GeoDataFrame, title: str) -> None:
     """Renders the Summary & QA tab."""
+
     st.header(f"Summary & QA: `{title}`")
     qa_stats = calculate_qa_stats(gdf)
 
-    if not qa_stats:
-        st.warning("Could not generate QA statistics.")
-        return
+    # --- CRS Plausibility Check ---
+    def plausible_for_crs(bbox, crs):
+        # Simple heuristics for common CRSs
+        if bbox is None or crs is None:
+            return True  # Can't check
+        try:
+            crs_str = crs.to_string() if hasattr(crs, 'to_string') else str(crs)
+            minx, miny, maxx, maxy = bbox
+            # EPSG:4326 (WGS84): longitude [-180, 180], latitude [-90, 90]
+            if "4326" in crs_str or "WGS 84" in crs_str:
+                if not (-180 <= minx <= 180 and -180 <= maxx <= 180 and -90 <= miny <= 90 and -90 <= maxy <= 90):
+                    return False
+            # EPSG:27700 (British National Grid): easting/northing in meters, typical ranges
+            if "27700" in crs_str or "OSGB" in crs_str:
+                if not (0 <= minx <= 700000 and 0 <= maxx <= 700000 and 0 <= miny <= 1300000 and 0 <= maxy <= 1300000):
+                    return False
+        except Exception:
+            return True
+        return True
+
+    crs_mismatch = False
+    bbox = qa_stats.get("bbox")
+    crs = gdf.crs
+    if bbox is not None and crs is not None:
+        if not plausible_for_crs(bbox, crs):
+            crs_mismatch = True
+
+    if crs_mismatch:
+        st.warning("Possible CRS mismatch detected: The assigned CRS does not match the coordinate ranges in the data.\n\nFor example, the CRS is set to EPSG:4326 (WGS84), but the coordinates look like they are in a projected system such as EPSG:27700 (British National Grid).\n\nThis can cause incorrect map display and spatial analysis results.")
+        with st.expander("Fix CRS Assignment or Transform Data"):
+            st.write("You can either reassign the CRS (set the correct CRS without changing coordinates), or transform the data (convert coordinates to a new CRS).\n\n**Reassign** if the coordinates are correct but the CRS is wrong.\n**Transform** if the CRS is correct but the coordinates need to be converted.")
+            crs_options = [
+                ("EPSG:4326 (WGS84)", "EPSG:4326"),
+                ("EPSG:27700 (British National Grid)", "EPSG:27700"),
+                ("EPSG:3857 (Web Mercator)", "EPSG:3857"),
+            ]
+            crs_label, crs_code = zip(*crs_options)
+            selected_idx = 1 if "4326" in str(crs) else 0
+            new_crs = st.selectbox("Select CRS to assign or transform to:", crs_label, index=selected_idx)
+            action = st.radio("Action", ["Reassign CRS (do not transform coordinates)", "Transform to selected CRS (convert coordinates)"])
+            if st.button("Apply CRS Fix", key="crs_fix_btn"):
+                import geopandas as gpd
+                if action.startswith("Reassign"):
+                    gdf.set_crs(crs_code[crs_label.index(new_crs)], inplace=True, allow_override=True)
+                    st.success(f"CRS reassigned to {new_crs}.")
+                else:
+                    gdf.to_crs(crs_code[crs_label.index(new_crs)], inplace=True)
+                    st.success(f"Data transformed to {new_crs}.")
+                # Recompute QA stats and bbox after fix
+                qa_stats.clear()
+                qa_stats.update(calculate_qa_stats(gdf))
+                bbox = qa_stats.get("bbox")
+                crs = gdf.crs
+                st.rerun()
 
     # --- Display Metrics ---
     st.subheader("Key Metrics")
@@ -33,7 +86,8 @@ def render_summary_tab(gdf: GeoDataFrame, title: str) -> None:
     cols[4].metric("Duplicate Rows", f"{dup_count:,} ({dup_pct:.1f}%)")
     # --- Sample Data Preview ---
     st.subheader("Sample Data Preview")
-    st.dataframe(gdf.head(5), hide_index=True)
+    display_df = prepare_dataframe_for_display(gdf, max_rows=5)
+    st.dataframe(display_df, hide_index=True)
 
     # --- Display Detailed Stats ---
     col1, col2 = st.columns(2)
@@ -126,6 +180,14 @@ def render_summary_tab(gdf: GeoDataFrame, title: str) -> None:
     # --- Column Info Table ---
     st.subheader("Column Overview")
     import pandas as pd
+    # User input for custom null values
+    custom_nulls_str = st.text_input(
+        "Custom null values (comma-separated, case-insensitive)",
+        value=", ",  # default: empty string and space
+        help="Specify custom null values to be counted in each column. Example: '', 'N/A', 'none', '-'"
+    )
+    custom_nulls = [v.strip().lower() for v in custom_nulls_str.split(",") if v.strip() != ""]
+
     def get_column_dtype(series):
         import pandas as pd
         inferred = pd.api.types.infer_dtype(series, skipna=True)
@@ -164,12 +226,38 @@ def render_summary_tab(gdf: GeoDataFrame, title: str) -> None:
                 dtype_label = unique_types.pop()
         return dtype_label
 
+    def count_custom_nulls(series, custom_nulls):
+        if not custom_nulls:
+            return 0
+        # Convert all values to string, lower, strip, then count matches
+        return series.apply(lambda v: str(v).strip().lower() in custom_nulls if pd.notnull(v) else False).sum()
+
     col_info = pd.DataFrame({
         "Column Name": gdf.columns,
         "Data Type": [get_column_dtype(gdf[col]) for col in gdf.columns],
         "Unique Values": [gdf[col].nunique(dropna=False) for col in gdf.columns],
         "Duplicate Values": [gdf.shape[0] - gdf[col].nunique(dropna=False) for col in gdf.columns],
+        "Custom Null Values": [count_custom_nulls(gdf[col], custom_nulls) for col in gdf.columns],
     })
+    # Add a separate column for geometry WKT sample, keep all columns type-consistent
+    col_info["Geometry Sample (WKT)"] = ""
+    if "geometry" in gdf.columns:
+        try:
+            col_info.loc[col_info["Column Name"] == "geometry", "Data Type"] = "geometry (WKT)"
+            geom_sample = None
+            geom_series = gdf["geometry"]
+            # Defensive: check for shapely and valid geometry
+            if hasattr(geom_series, "dropna"):
+                non_null_geoms = geom_series.dropna()
+                if not non_null_geoms.empty:
+                    first_geom = non_null_geoms.iloc[0]
+                    # Defensive: check for wkt attribute
+                    wkt_str = getattr(first_geom, "wkt", None)
+                    if wkt_str is not None:
+                        wkt_preview = wkt_str[:80] + ("..." if len(wkt_str) > 80 else "")
+                        col_info.loc[col_info["Column Name"] == "geometry", "Geometry Sample (WKT)"] = wkt_preview
+        except Exception:
+            col_info.loc[col_info["Column Name"] == "geometry", "Data Type"] = "geometry"
     st.dataframe(col_info, hide_index=True)
     # --- Numeric Columns: Outlier Detection & Value Range ---
     st.subheader("Numeric Columns: Outlier Detection & Value Range")

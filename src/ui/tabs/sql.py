@@ -6,6 +6,7 @@ import streamlit as st
 import pandas as pd
 
 from src.core.database import get_duckdb_connection
+from src.core.data_loader import prepare_dataframe_for_display, ensure_display_safe_dataframe
 from src.utils.types import GeoDataFrame
 
 
@@ -34,7 +35,8 @@ def render_sql_query_tab(gdf: GeoDataFrame, name: str) -> None:
             with st.spinner("Executing query..."):
                 result_df = con.execute(query).fetchdf()
             st.success("Query executed successfully!")
-            st.dataframe(result_df)
+            display_result = ensure_display_safe_dataframe(result_df)
+            st.dataframe(display_result)
 
             # Show map if geometry column exists and is not empty
             if "geometry" in result_df.columns:
