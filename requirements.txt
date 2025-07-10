@@ -5,3 +5,4 @@ duckdb
 pydeck
 altair
 pygwalker
+hvplot
